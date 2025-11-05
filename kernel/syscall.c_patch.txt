@@ -1,0 +1,11 @@
+Add these lines to your kernel/syscall.c:
+
+extern uint64 sys_clone(void);
+extern uint64 sys_join(void);
+
+and in the syscall table (syscalls[]), add entries:
+
+[SYS_clone] sys_clone,
+[SYS_join]  sys_join,
+
+Make sure indices and ordering match your syscall.h numbering.

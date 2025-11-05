@@ -1,0 +1,4 @@
+Add prototypes to defs.h or appropriate header:
+
+int clone(void (*fcn)(void *), void *arg, void *stack);
+int join(int *stack_ret);
