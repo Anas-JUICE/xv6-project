@@ -1,0 +1,18 @@
+{
+    "configurations": [
+        {
+            "name": "xv6",
+            "includePath": [
+                "${workspaceFolder}",
+                "${workspaceFolder}/kernel",
+                "C:/Users/antho/Desktop/Cmps 240/Project phase 2/xv6-project/kernel"
+            ],
+            "defines": [],
+            "compilerPath": "C:/Program Files/mingw-w64/mingw64/bin/gcc.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-gcc-x64"
+        }
+    ],
+    "version": 4
+}
