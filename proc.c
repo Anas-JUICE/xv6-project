@@ -221,6 +221,62 @@ fork(void)
   return pid;
 }
 
+int
+clone(void (*fcn)(void *), void *arg, void *stack)
+{
+  struct proc *curproc = myproc();
+  struct proc *np;
+  int i;
+  uint sp;
+
+  // Basic validation: stack must be inside addr space.
+  if((uint)stack >= curproc->sz || (uint)stack + PGSIZE > curproc->sz)
+    return -1;
+
+  if((np = allocproc()) == 0)
+    return -1;
+
+  // Share address space instead of copying it.
+  np->pgdir = curproc->pgdir;
+  np->sz = curproc->sz;
+
+  // Copy trapframe.
+  *np->tf = *curproc->tf;
+
+  // Return 0 in the child.
+  np->tf->eax = 0;
+
+  // Set up user stack: one page, put arg + fake return address.
+  sp = (uint)stack + PGSIZE;
+  // push arg
+  sp -= 4;
+  *(uint*)sp = (uint)arg;
+  // fake return address
+  sp -= 4;
+  *(uint*)sp = 0xffffffff;
+
+  np->tf->esp = sp;
+  np->tf->eip = (uint)fcn;   // entry = function
+
+  // Inherit open files and cwd like fork().
+  for(i = 0; i < NOFILE; i++)
+    if(curproc->ofile[i])
+      np->ofile[i] = filedup(curproc->ofile[i]);
+  np->cwd = idup(curproc->cwd);
+
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+  // Parent of the thread is the calling process.
+  np->parent = curproc;
+
+  // Make runnable.
+  acquire(&ptable.lock);
+  np->state = RUNNABLE;
+  release(&ptable.lock);
+
+  return np->pid;
+}
+
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait() to find out it exited.

@@ -42,3 +42,4 @@ int atoi(const char*);
 // Your custom system calls
 int getcallcount(void);
 int authenticate(char*, char*);
+int clone(void (*fcn)(void *), void *arg, void *stack);
