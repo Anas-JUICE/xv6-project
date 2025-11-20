@@ -153,10 +153,18 @@ _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
+	
+_search: search.o $(ULIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _search search.o $(ULIB)
+	$(OBJDUMP) -S _search > search.asm
+	$(OBJDUMP) -t _search | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > search.sym
 
 # Special rule for ls with wildcard support
 ls.o: ls.c
 	$(CC) $(CFLAGS) -DLS_WILDCARD -c -o ls.o ls.c
+	
+search.o: user/search.c
+	$(CC) $(CFLAGS) -I. -c -o search.o user/search.c
 
 _forktest: forktest.o $(ULIB)
 	# forktest has less library code linked in - needs to be small
@@ -194,6 +202,12 @@ UPROGS=\
 	_login\
 	_tree\
 	_diff\
+	_threadtest\
+	_search\
+	_find\
+	_split\
+	_schedtest
+
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

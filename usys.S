@@ -31,3 +31,5 @@ SYSCALL(sleep)
 SYSCALL(uptime)
 SYSCALL(getcallcount)
 SYSCALL(authenticate)
+
+SYSCALL(clone)

@@ -112,6 +112,13 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
+    // ===========================================================
+  // ADD THESE LINES FOR MLFQ SCHEDULER INITIALIZATION
+  p->priority = 1;          // middle priority queue by default
+  p->ticks_used = 0;        // used ticks counter reset
+  p->last_run_tick = ticks; // track aging
+  // ===========================================================
+
   return p;
 }
 
@@ -203,6 +210,12 @@ fork(void)
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
+
+    // ADD THESE LINES FOR MLFQ SCHEDULER
+  np->priority = curproc->priority;     // child inherits parent priority
+  np->ticks_used = 0;                   // new CPU slice tracking
+  np->last_run_tick = curproc->last_run_tick;
+  
   for(i = 0; i < NOFILE; i++)
     if(curproc->ofile[i])
       np->ofile[i] = filedup(curproc->ofile[i]);
@@ -219,6 +232,62 @@ fork(void)
   release(&ptable.lock);
 
   return pid;
+}
+
+int
+clone(void (*fcn)(void *), void *arg, void *stack)
+{
+  struct proc *curproc = myproc();
+  struct proc *np;
+  int i;
+  uint sp;
+
+  // Basic validation: stack must be inside addr space.
+  if((uint)stack >= curproc->sz || (uint)stack + PGSIZE > curproc->sz)
+    return -1;
+
+  if((np = allocproc()) == 0)
+    return -1;
+
+  // Share address space instead of copying it.
+  np->pgdir = curproc->pgdir;
+  np->sz = curproc->sz;
+
+  // Copy trapframe.
+  *np->tf = *curproc->tf;
+
+  // Return 0 in the child.
+  np->tf->eax = 0;
+
+  // Set up user stack: one page, put arg + fake return address.
+  sp = (uint)stack + PGSIZE;
+  // push arg
+  sp -= 4;
+  *(uint*)sp = (uint)arg;
+  // fake return address
+  sp -= 4;
+  *(uint*)sp = 0xffffffff;
+
+  np->tf->esp = sp;
+  np->tf->eip = (uint)fcn;   // entry = function
+
+  // Inherit open files and cwd like fork().
+  for(i = 0; i < NOFILE; i++)
+    if(curproc->ofile[i])
+      np->ofile[i] = filedup(curproc->ofile[i]);
+  np->cwd = idup(curproc->cwd);
+
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+  // Parent of the thread is the calling process.
+  np->parent = curproc;
+
+  // Make runnable.
+  acquire(&ptable.lock);
+  np->state = RUNNABLE;
+  release(&ptable.lock);
+
+  return np->pid;
 }
 
 // Exit the current process.  Does not return.
@@ -319,41 +388,74 @@ wait(void)
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
+// in proc.c, replace scheduler() implementation with the following:
+
 void
 scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+
+  // simple per-CPU scheduler with MLFQ
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
-    // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+    // First: do aging/promotion: if a process hasn't run for MLFQ_AGING, promote it.
+    int curtick = ticks;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
+      if(p->state == RUNNABLE){
+        if(p->priority > 0 && (curtick - p->last_run_tick) > MLFQ_AGING){
+          p->priority--;
+          p->ticks_used = 0;
+        }
+      }
+    }
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
+    // find the highest priority non-empty runnable process
+    struct proc *chosen = 0;
+    int highest = MLFQ_LEVELS; // higher value = lower priority
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != RUNNABLE) continue;
+      if(p->priority < highest){
+        highest = p->priority;
+        chosen = p;
+        if(highest == 0) break; // cannot get higher than 0
+      }
+    }
+
+    if(chosen){
+      p = chosen;
+      // switch to chosen process
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
+      p->last_run_tick = ticks;
+      // reset per-run tick counter if new run
+      // run until it yields or its quantum expires
+      swtch(&c->scheduler, p->context);
       switchkvm();
 
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
+      // on return, the process may have changed state (SLEEPING, RUNNABLE)
+      // update accounting and demote if used its quantum
+      if(p->state == RUNNABLE){
+        // compute ticks used during this slice
+        // this relies on p->ticks_used being incremented by an interrupt handler (see clock interrupt)
+        int quantum = (p->priority == 0) ? MLFQ_QUANTUM0 : (p->priority == 1 ? MLFQ_QUANTUM1 : MLFQ_QUANTUM2);
+        if(p->ticks_used >= quantum){
+          if(p->priority < (MLFQ_LEVELS-1)) p->priority++;
+          p->ticks_used = 0;
+        }
+        p->last_run_tick = ticks;
+      }
       c->proc = 0;
     }
     release(&ptable.lock);
-
   }
 }
+
 
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores

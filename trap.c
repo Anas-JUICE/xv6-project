@@ -54,6 +54,28 @@ trap(struct trapframe *tf)
       wakeup(&ticks);
       release(&tickslock);
     }
+
+      // >>> ADD THIS FOR MLFQ SCHEDULER ACCOUNTING <<<
+  if(myproc() && myproc()->state == RUNNING){
+    myproc()->ticks_used++;
+
+    int q;
+    // choose correct quantum based on priority
+    if(myproc()->priority == 0)
+      q = MLFQ_QUANTUM0;
+    else if(myproc()->priority == 1)
+      q = MLFQ_QUANTUM1;
+    else
+      q = MLFQ_QUANTUM2;
+
+    // if time quantum expired, force context switch
+    if(myproc()->ticks_used >= q){
+      // process consumed full quantum → ask scheduler to demote later
+      yield();
+    }
+  }
+  // <<< END ADDITIONS >>>
+
     lapiceoi();
     break;
   case T_IRQ0 + IRQ_IDE:

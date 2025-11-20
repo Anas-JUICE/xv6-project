@@ -1,3 +1,10 @@
+#define MLFQ_LEVELS 3
+#define MLFQ_QUANTUM0 1   // ticks for level 0
+#define MLFQ_QUANTUM1 2   // ticks for level 1
+#define MLFQ_QUANTUM2 4   // ticks for level 2
+#define MLFQ_AGING 50     // ticks after which to promote for aging
+
+
 // Per-CPU state
 struct cpu {
   uchar apicid;                // Local APIC ID
@@ -49,6 +56,9 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int priority;         // 0 = highest, (MLFQ level)
+  int ticks_used;       // how many ticks used at current priority
+  int last_run_tick;    // tick when it last ran (for aging)
 };
 
 // Process memory is laid out contiguously, low addresses first:
@@ -56,3 +66,6 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+
+int clone(void (*fcn)(void *), void *arg, void *stack);
